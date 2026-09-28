@@ -18,8 +18,8 @@ import math
 from turtlesim.srv import Spawn
 
 # TODO: import necessary ROS message types and libraries
-# from turtlesim.msg import ()
-# from geometry_msgs.msg import ()
+from turtlesim.msg import Pose
+from geometry_msgs.msg import Twist
 
 
 
@@ -39,14 +39,14 @@ Whenever topic receive new info, callback function is called.
 def leader_pose_callback(msg):
 
 	global goal_pose
-
+	goal_pose = msg
 	pass
 
 
 def follower_pose_callback(msg):
 
 	global current_pose
-
+	current_pose = msg
 	pass
 
 ############### Your Code End Here ###############
@@ -73,9 +73,9 @@ def main():
 	# Initialize Publisher/Subscriber
 	leader_pose_sub = rospy.Subscriber('/turtle1/pose', Pose, leader_pose_callback)
 	# TODO: define subscriber for follower turtle pose
-	# follower_pose_sub = rospy.Subscriber('topic_name', topic_type, callback_function)
+	follower_pose_sub = rospy.Subscriber('/turtle2/pose', Pose, follower_pose_callback)
 	# TODO: define publisher for follower turtle velocity
-	# follower_vel_pub = rospy.Publisher('topic_name', topic_type, queue_size=10)
+	follower_vel_pub = rospy.Publisher('/turtle2/cmd_vel', Twist, queue_size=10)
 	
 	vel_msg = Twist()
 
@@ -91,7 +91,21 @@ def main():
 			# TODO: compute the desired linear velocity and angular velocity and publish to the topic.
 			# choose proper proportional gain for linear velocity and angular velocity
 			# recommended value: linear velocity proportional gain = 1, angular velocity proportional gain = 4.0
+			dx = goal_pose.x - current_pose.x
+			dy = goal_pose.y - current_pose.y
+			distance = euclidean_distance(current_pose, goal_pose)
+			desired_heading = math.atan2(dy, dx)
+			heading_diff = desired_heading - current_pose.theta
+			#heading_diff = math.atan2(math.sin(heading_diff),math.cos(heading_diff))
 
+			# Gain 1 for forward movement; slow down while turning.
+			vel_msg.linear.x = 1
+			vel_msg.linear.y = 0
+			vel_msg.linear.z = 0
+			# Gain 4 for turning.
+			vel_msg.angular.x = 0
+			vel_msg.angular.y = 0
+			vel_msg.angular.z = max(-4.0, min(4.0, 4.0 * heading_diff))
 		
 
 
