@@ -45,9 +45,42 @@ def main():
 	"""
 	############## Your Code Start Here ##############
 
-	home = np.radians([0.00, 0.00, 0.00, 0.00, 0.00, 0.00])
+	# home 中转姿态：填写实际测量的六个关节角度（度）
+	home_deg = [np.nan] * 6
 
-	Q = None
+	# 第一维：高度，0=上层，1=中层，2=下层
+	# 第二维：塔位置，0=第1塔，1=第2塔，2=第3塔
+	# 第三维：六个关节角度
+	Q_deg = np.array([
+		# 上层接触位置
+		[
+			[np.nan] * 6,  # 第1塔上层
+			[np.nan] * 6,  # 第2塔上层
+			[np.nan] * 6,  # 第3塔上层
+		],
+
+		# 中层接触位置
+		[
+			[np.nan] * 6,  # 第1塔中层
+			[np.nan] * 6,  # 第2塔中层
+			[np.nan] * 6,  # 第3塔中层
+		],
+
+		# 下层接触位置
+		[
+			[np.nan] * 6,  # 第1塔下层
+			[np.nan] * 6,  # 第2塔下层
+			[np.nan] * 6,  # 第3塔下层
+		],
+	], dtype=float)
+
+	# 防止尚未填写的位置进入运动流程
+	if not np.isfinite(home_deg).all() or not np.isfinite(Q_deg).all():
+		raise ValueError("请先填写 home 和 Q 中实际测量的六个关节角度")
+
+	# 统一从度转换为弧度
+	home = np.radians(home_deg)
+	Q = np.radians(Q_deg)
 
 	############### Your Code End Here ###############
 
@@ -62,20 +95,27 @@ def main():
 	des = 2
 
 	while not input_done:
-		input_string = input("Enter number of loops <Either 1 2 3 or 0 to quit> ")
-		print("You entered " + input_string + "\n")
-
-		if int(input_string) == 1:
-			input_done = 1
-		elif int(input_string) == 2:
-			input_done = 1
-		elif int(input_string) == 3:
-			input_done = 1
-		elif int(input_string) == 0:
-			print("Quitting... ")
+		start_input = input("起始塔（1/2/3，0退出）：").strip()
+		if start_input == "0":
 			sys.exit()
-		else:
-			print("Please just enter the character 1 2 3 or 0 to quit \n\n")
+
+		des_input = input("目标塔（1/2/3，0退出）：").strip()
+		if des_input == "0":
+			sys.exit()
+
+		if start_input not in ("1", "2", "3") or \
+				des_input not in ("1", "2", "3"):
+			print("请输入 1、2 或 3。")
+			continue
+
+		if start_input == des_input:
+			print("起始塔和目标塔不能相同。")
+			continue
+
+		start = int(start_input) - 1
+		des = int(des_input) - 1
+		mid = 3 - start - des
+		input_done = 1
 
 	############### Your Code End Here ###############
 
@@ -92,13 +132,13 @@ def main():
 	ur3e = UR3e()
 	ur3e.init_array(home, Q)
 	time.sleep(2)
-
+	
 	# example code for moving the arm to home position is provided below
 	# ur3e.move_arm(home)
 	# ur3e.move_block(start, 0, des, 2)
 	# ...
 	# ur3e.move_arm(home)
-
+	ur3e.move_arm(home)
 	############### Your Code End Here ###############
 
 if __name__ == '__main__':
