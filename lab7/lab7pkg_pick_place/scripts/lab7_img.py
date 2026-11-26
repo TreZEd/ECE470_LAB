@@ -25,6 +25,8 @@ lab7pkg_pick_place/lab7_img.py
 
 import cv2
 import numpy as np
+import json
+from pathlib import Path
 
 class ImageProcess():
     def __init__(self):
@@ -154,18 +156,63 @@ class ImageProcess():
 
         return center_value, shape, theta
 
+def load_calibration(calibration_path=None):
+    """Read private paired points from a local file; keep this file out of Git."""
+    if calibration_path is None:
+        calibration_path = Path(__file__).with_name("camera_world_calibration.json")
+    with open(calibration_path, "r", encoding="utf-8") as calibration_file:
+        calibration = json.load(calibration_file)
+    return calibration["camera_points"], calibration["world_points"]
+
 def coordinate_transform(center_cam, center_robot, center_snap):
+    """Convert camera pixels to world coordinates using paired calibration data.
 
-    ############## Your Code Start Here ##############
-    # TODO: transform camera coordinate to robot coordinate
-    # a simple linear transformation is implemented refer to manual
-    # Tip: center_value: [[Object1],[Object2],...]
+    center_cam: N paired [xc, yc] pixel coordinates.
+    center_robot: N paired [xt, yt] or [xt, yt, zt] world coordinates.
+    center_snap: M [xc, yc] pixel coordinates to transform.
+    Returns M world-coordinate lists in the calibration data's units.
 
-    pass
+    With at least three non-collinear pairs, fit an affine map by least
+    squares using every pair. For XYZ output, zt is an estimate on the
+    calibration plane, not a measurement of an object's arbitrary depth.
+    Two XY pairs retain the manual's swapped-axis transformation.
+    """
+    cam = np.asarray(center_cam, dtype=float)
+    world = np.asarray(center_robot, dtype=float)
+    snap = np.asarray(center_snap, dtype=float)
 
-    ############### Your Code End Here ###############
+    if cam.ndim != 2 or cam.shape[1] != 2 or len(cam) < 2:
+        raise ValueError("center_cam must contain at least two [xc, yc] pairs.")
+    if (world.ndim != 2 or world.shape[0] != len(cam)
+            or world.shape[1] not in (2, 3)):
+        raise ValueError("center_robot must contain one XY or XYZ row per camera point.")
+    if snap.ndim == 1 and snap.size == 0:
+        snap = snap.reshape(0, 2)
+    if snap.ndim != 2 or snap.shape[1] != 2:
+        raise ValueError("center_snap must have shape (M, 2).")
+    if not all(np.isfinite(points).all() for points in (cam, world, snap)):
+        raise ValueError("Coordinates must contain only finite numbers.")
 
-def lab_imgproc(center_robot1, center_robot2):
+    if len(cam) == 2:
+        if world.shape[1] != 2:
+            raise ValueError("XYZ calibration needs at least three non-collinear pairs.")
+        delta = cam[1] - cam[0]
+        if np.any(np.isclose(delta, 0.0)):
+            raise ValueError("Two-point calibration needs different xc and yc values.")
+        ratios = (world[1] - world[0]) / delta[::-1]
+        return (world[0] + (snap - cam[0])[:, ::-1] * ratios).tolist()
+
+    # [xc, yc, 1] @ coefficients = [xt, yt] or [xt, yt, zt].
+    design = np.column_stack((cam, np.ones(len(cam))))
+    coefficients, _, rank, _ = np.linalg.lstsq(design, world, rcond=None)
+    if rank < 3:
+        raise ValueError("Calibration camera points must not all lie on one line.")
+
+    targets = np.column_stack((snap, np.ones(len(snap))))
+    return (targets @ coefficients).tolist()
+
+def lab_imgproc(center_robot1=None, center_robot2=None):
+    """Use the local calibration pairs by default, or two supplied XY pairs."""
 
     # init image path
     # template image for template matching of rectangle and ellipse
@@ -184,21 +231,20 @@ def lab_imgproc(center_robot1, center_robot2):
     # template process to get the contour of rectangle and ellipse
     img_process.template_process(path_template)
 
-    # image process for calibration images to get the position of blocks
-    center_cali1, shape_cali1, theta_cali1 = img_process.image_process(path_img_cali1)
-    center_cali2, shape_cali2, theta_cali2 = img_process.image_process(path_img_cali2)
+    if center_robot1 is None and center_robot2 is None:
+        # Keep measured pixel/world positions in the private local JSON file.
+        center_cam, center_robot = load_calibration()
+    elif center_robot1 is None or center_robot2 is None:
+        raise ValueError("Provide both two-point XY coordinates, or neither.")
+    else:
+        # Preserve the original manual-based two-point XY workflow.
+        center_cali1, _, _ = img_process.image_process(path_img_cali1)
+        center_cali2, _, _ = img_process.image_process(path_img_cali2)
+        center_cam = [center_cali1[0], center_cali2[0]]
+        center_robot = [center_robot1, center_robot2]
 
-    # image process to get the shape, position and orientation of blocks
+    # Locate the blocks in the current scene and transform their pixel centers.
     center_snap, shape_snap, theta_snap = img_process.image_process(path_img_snap)
-
-    # compute the coordinate of your blocks in robot coordinate system
-    center_cam = []
-    center_cam.append(center_cali1[0])
-    center_cam.append(center_cali2[0])
-
-    center_robot = []
-    center_robot.append(center_robot1)
-    center_robot.append(center_robot2)
 
     center_snap_robot = coordinate_transform(center_cam, center_robot, center_snap)
 
